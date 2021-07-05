@@ -20,6 +20,7 @@
 #include "FreePIE.h"
 #include "SteamVR.h"
 #include "TrackIR.h"
+#include "OpenXR.h"
 
 #include "Vectors.h"
 #include "Matrices.h"
@@ -190,6 +191,7 @@ void LoadParams();
 const char *TRACKER_TYPE				= "tracker_type"; // Defines which tracker to use
 const char *TRACKER_TYPE_FREEPIE		= "FreePIE"; // Use FreePIE as the tracker
 const char *TRACKER_TYPE_STEAMVR		= "SteamVR"; // Use SteamVR as the tracker
+const char* TRACKER_TYPE_OPENXR			= "OpenXR"; // Use SteamVR as the tracker
 const char *TRACKER_TYPE_TRACKIR		= "TrackIR"; // Use TrackIR (or OpenTrack) as the tracker
 const char *TRACKER_TYPE_NONE			= "None";
 const char *YAW_MULTIPLIER				= "yaw_multiplier";
@@ -236,6 +238,7 @@ typedef enum {
 	TRACKER_NONE,
 	TRACKER_FREEPIE,
 	TRACKER_STEAMVR,
+	TRACKER_OPENXR,
 	TRACKER_TRACKIR
 } TrackerType;
 TrackerType g_TrackerType = TRACKER_NONE;
@@ -1193,6 +1196,45 @@ int CockpitLookHook(int* params)
 			}
 			break;
 
+			case TRACKER_OPENXR:
+			{
+				float x, y, z;
+
+				if (g_bKeyboardLean) {
+					ComputeCockpitLean(&g_headPosFromKeyboard);
+					g_headPosFromKeyboard = -g_headPosFromKeyboard;
+				}
+				else
+					g_headPosFromKeyboard.set(0, 0, 0);
+
+				dataReady = GetOpenXRTrackingData(&yaw, &pitch, &x, &y, &z);
+				// We need to invert the Z-axis because of XWA's coordinate system.
+
+
+				// HACK ALERT: I'm reading the positional tracking data from FreePIE when
+				// running SteamVR because setting up the PSMoveServiceSteamVRBridge is kind
+				// of... tricky; and I'm not going to bother right now since PSMoveService
+				// already works very well for me.
+				// Read the positional data from FreePIE if the right flag is set
+				if (g_bSteamVRPosFromFreePIE) {
+					ReadFreePIE(g_iFreePIESlot);
+					x = g_FreePIEData.x;
+					y = g_FreePIEData.y;
+					z = -g_FreePIEData.z;
+				}
+				yaw *= RAD_TO_DEG * g_fYawMultiplier;
+				pitch *= RAD_TO_DEG * g_fPitchMultiplier;
+				yawSign = -1.0f;
+				if (g_bResetHeadCenter) {
+					g_headCenter[0] = x;
+					g_headCenter[1] = y;
+					g_headCenter[2] = z;
+				}
+				Vector4 pos(x, y, z, 1.0f);
+				g_headPos = (pos - g_headCenter);
+			}
+			break;
+
 			case TRACKER_TRACKIR:
 			{
 				float x, y, z;
@@ -1571,6 +1613,10 @@ void LoadParams() {
 				else if (_stricmp(svalue, TRACKER_TYPE_STEAMVR) == 0) {
 					log_debug("Using SteamVR for tracking");
 					g_TrackerType = TRACKER_STEAMVR;
+				}
+				else if (_stricmp(svalue, TRACKER_TYPE_OPENXR) == 0) {
+					log_debug("Using SteamVR for tracking");
+					g_TrackerType = TRACKER_OPENXR;
 				}
 				else if (_stricmp(svalue, TRACKER_TYPE_TRACKIR) == 0) {
 					log_debug("Using TrackIR for tracking");
